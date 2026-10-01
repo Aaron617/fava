@@ -37,6 +37,34 @@ HELP_PAGES = {
     "extensions": "Extensions",
 }
 
+HELP_PAGES_ZH_CN = {
+    "_index": "帮助首页",
+    "budgets": "预算",
+    "conversion": "币种与估值转换",
+    "import": "导入",
+    "options": "配置选项",
+    "beancount_syntax": "Beancount 账本语法",
+    "features": "功能说明",
+    "filters": "筛选记录",
+    "extensions": "扩展",
+}
+
+_HELP_DIR = Path(__file__).parent
+
+
+def _is_simplified_chinese(language: str | None) -> bool:
+    return (language or "").replace("-", "_").lower() in {
+        "zh",
+        "zh_cn",
+        "zh_hans",
+        "zh_hans_cn",
+    }
+
+
+def help_page_titles(language: str | None = None) -> dict[str, str]:
+    """Return help navigation titles for the requested language."""
+    return HELP_PAGES_ZH_CN if _is_simplified_chinese(language) else HELP_PAGES
+
 
 class _CustomRenderer(RendererHTML):
     """Some custom help pages rendering logic."""
@@ -65,7 +93,14 @@ class _CustomRenderer(RendererHTML):
     ) -> str:
         """Add an id to all headings so that they can be linked to."""
         seen: set[str] = env.setdefault("heading_ids", set())
-        slug = slugify(tokens[idx + 1].content)
+        heading_index = env.get("heading_index", 0)
+        original_slugs = env.get("original_heading_slugs", [])
+        slug = (
+            original_slugs[heading_index]
+            if heading_index < len(original_slugs)
+            else slugify(tokens[idx + 1].content)
+        )
+        env["heading_index"] = heading_index + 1
         if slug in seen:  # pragma: no cover
             msg = f"Duplicate heading {slug}"
             raise ValueError(msg)
@@ -95,14 +130,29 @@ class _CustomRenderer(RendererHTML):
 _MD = MarkdownIt("commonmark", renderer_cls=_CustomRenderer).enable("table")
 
 
-def render_help_page(page_slug: str) -> str | None:
+def render_help_page(
+    page_slug: str,
+    language: str | None = None,
+) -> str | None:
     """Render the HTML for a help page."""
     if page_slug not in HELP_PAGES:
         return None
 
-    help_path = Path(__file__).parent / (page_slug + ".md")
+    help_path = _HELP_DIR / (page_slug + ".md")
     contents = help_path.read_text(encoding="utf-8")
-    html: str = _MD.render(contents)
+    env: EnvType = {}
+    if _is_simplified_chinese(language):
+        translated_path = _HELP_DIR / "zh_CN" / (page_slug + ".md")
+        if translated_path.is_file():
+            # Keep existing deep links when translating the visible headings.
+            original_tokens = _MD.parse(contents)
+            env["original_heading_slugs"] = [
+                slugify(original_tokens[i + 1].content)
+                for i, token in enumerate(original_tokens)
+                if token.type == "heading_open"
+            ]
+            contents = translated_path.read_text(encoding="utf-8")
+    html: str = _MD.render(contents, env)
     if page_slug == "_index":
         html = html.replace("BEANCOUNT_VERSION", version("beancount"))
         html = html.replace("FAVA_VERSION", version("fava"))

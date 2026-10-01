@@ -25,6 +25,7 @@ from flask import Blueprint
 from flask import get_template_attribute
 from flask import jsonify
 from flask import request
+from flask_babel import get_locale
 from flask_babel import gettext
 
 from fava.beans.abc import Document
@@ -673,13 +674,14 @@ class HelpPage:
 @api_endpoint
 def get_help(page_slug: str) -> HelpPage:
     """Get one of Fava's help pages, rendered to HTML."""
-    from fava.help import HELP_PAGES
+    from fava.help import help_page_titles
     from fava.help import render_help_page
 
-    html = render_help_page(page_slug)
+    language = str(get_locale())
+    html = render_help_page(page_slug, language)
     if html is None:
         raise NotFoundError
-    return HelpPage(html, list(HELP_PAGES.items()))
+    return HelpPage(html, list(help_page_titles(language).items()))
 
 
 @dataclass(frozen=True)
